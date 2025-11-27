@@ -1,0 +1,291 @@
+from machine import Pin, ADC
+import time
+
+# ============================
+# CLASE BASE: SUPERCLASE
+# ============================
+
+class BaseSensor:
+    """
+    CLASE BASE (superclase)
+    - Representa un sensor genérico.
+    - Aquí se ve: CLASE, ENCAPSULAMIENTO (atributos con _), y HERENCIA
+      porque las demás clases van a extender de ésta.
+    """
+
+    def __init__(self, name):
+        self._name = name            # atributo "protegido" (encapsulamiento)
+        self._last_value = None      # último valor leído
+
+    def read(self):
+        """
+        Método abstracto (idea de polimorfismo):
+        Cada subclase debe implementar su propia lectura.
+        """
+        raise NotImplementedError("La subclase debe implementar read()")
+
+    def as_text(self):
+        """
+        Representación genérica del valor del sensor.
+        Este método será SOBREESCRITO (POLIMORFISMO) en cada sensor concreto.
+        """
+        return "{}: {}".format(self._name, self._last_value)
+
+    # ======== PROPIEDADES (ENCAPSULAMIENTO) ========
+
+    @property
+    def name(self):
+        """Propiedad de solo lectura para el nombre del sensor."""
+        return self._name
+
+    @property
+    def last_value(self):
+        """Propiedad de solo lectura para el último valor leído."""
+        return self._last_value
+
+
+# ============================
+# SENSORES DIGITALES (SUPERCLASE INTERMEDIA)
+# ============================
+
+class DigitalSensor(BaseSensor):
+    """
+    CLASE DigitalSensor
+    - HEREDA de BaseSensor (HERENCIA)
+    - Encapsula la lógica común de sensores digitales.
+    """
+
+    def __init__(self, name, pin_num, active_low=False):
+        super().__init__(name)  # Llamamos al constructor de la superclase
+        self._pin = Pin(pin_num, Pin.IN)
+        self._active_low = active_low
+
+    def read(self):
+        """
+        Implementación genérica para leer un pin digital.
+        Si el sensor es activo en LOW (como algunas tarjetas KY),
+        se invierte el valor para que "1" signifique "activo".
+        """
+        raw = self._pin.value()
+        if self._active_low:
+            self._last_value = 0 if raw == 1 else 1
+        else:
+            self._last_value = raw
+        return self._last_value
+
+    def is_active(self):
+        """Devuelve True si el sensor está activado."""
+        return bool(self._last_value)
+
+
+# ============================
+# SENSORES ANALÓGICOS (SUPERCLASE INTERMEDIA)
+# ============================
+
+class AnalogSensor(BaseSensor):
+    """
+    CLASE AnalogSensor
+    - HEREDA de BaseSensor.
+    - Pone en común la configuración del ADC para varios sensores.
+    """
+
+    def __init__(self, name, pin_num):
+        super().__init__(name)
+        self._adc = ADC(Pin(pin_num))
+        # Configuración típica del ADC en ESP32:
+        self._adc.atten(ADC.ATTN_11DB)      # rango ~0–3.3 V aprox.
+        self._adc.width(ADC.WIDTH_12BIT)    # resolución de 0 a 4095
+
+    def read(self):
+        """
+        Lectura analógica cruda (0–4095).
+        Las subclases pueden sobreescribir este método para convertir a unidades físicas.
+        """
+        self._last_value = self._adc.read()
+        return self._last_value
+
+
+# ============================
+# SENSORES ESPECÍFICOS
+# ============================
+
+class HallSensor(HallError := DigitalSensor):
+    """
+    Sensor de efecto Hall K49EH903 (en módulo tipo KY-003 / KY-024).
+    - HERENCIA: de DigitalSensor
+    - POLIMORFISMO: sobreescribe as_text()
+    """
+
+    def __init__(self, pin_num):
+        # Muchos módulos de Hall son activos en LOW
+        super().__init__("Hall K49EH903", pin_num, active_low=True)
+
+    def as_text(self):
+        if self.last_value is None:
+            estado = "sin lectura"
+        else:
+            estado = "IMÁN DETECTADO" if self.is_active() else "sin campo magnético fuerte"
+        return "[Hall] {} -> {}".format(self.name, estado)
+
+
+class FlameSensor(DigitalSensor):
+    """
+    Sensor de flama KY-026 (salida digital).
+    - Normalmente activo cuando detecta IR de la llama.
+    """
+
+    def __init__(self, pin_num):
+        # Muchos KY-026 también son activos en LOW
+        super().__init__("Flama KY-026", pin_num, active_low=True)
+
+    def as_text(self):
+        if self.last_value is None:
+            estado = "sin lectura"
+        else:
+            estado = "¡FUEGO DETECTADO!" if self.is_active() else "sin flama"
+        return "[Flama] {} -> {}".format(self.name, estado)
+
+
+class TemperatureSensor(AnalogSensor):
+    """
+    Sensor de temperatura KY-028 (salida analógica NTC).
+    - HEREDA de AnalogSensor.
+    - POLIMORFISMO: sobreescribe read() para devolver °C aproximados.
+    """
+
+    def __init__(self, pin_num):
+        super().__init__("Temperatura KY-028", pin_num)
+
+    def read(self):
+        """
+        Convierte la lectura analógica (0–4095) a una temperatura aproximada.
+        NOTA: esto es una aproximación solo para demostración.
+        Por ejemplo, mapeamos 0–4095 a -20 a 100 °C.
+        """
+        raw = super().read()  # usa la lectura analógica genérica
+        temp_c = (raw / 4095.0) * 120.0 - 20.0  # -20 a 100 °C aprox.
+        self._last_value = temp_c
+        return temp_c
+
+    def as_text(self):
+        if self.last_value is None:
+            return "[Temp] {} -> sin lectura".format(self.name)
+        return "[Temp] {} -> {:.1f} °C (aprox.)".format(self.name, self.last_value)
+
+
+class LDRSensor(AnalogSensor):
+    """
+    Fotoresistencia KY-018.
+    - HEREDA de AnalogSensor.
+    - Usa la lectura cruda para estimar nivel de luz.
+    """
+
+    def __init__(self, pin_num):
+        super().__init__("LDR KY-018", pin_num)
+
+    def as_text(self):
+        raw = self.last_value
+        if raw is None:
+            return "[Luz] {} -> sin lectura".format(self.name)
+
+        # Clasificación simple según el valor analógico
+        if raw < 150:
+            nivel = "oscuro"
+        elif raw < 500:
+            nivel = "iluminación media"
+        else:
+            nivel = "muy iluminado"
+
+        return "[Luz] {} -> {} (ADC = {})".format(self.name, nivel, raw)
+
+
+class PotentiometerSensor(AnalogSensor):
+    """
+    Potenciómetro conectado a una entrada analógica.
+    - HEREDA de AnalogSensor.
+    - Convierte el valor a porcentaje 0–100 %.
+    """
+
+    def __init__(self, pin_num):
+        super().__init__("Potenciómetro", pin_num)
+
+    def read(self):
+        raw = super().read()
+        porcentaje = (raw / 4095.0) * 100.0
+        self._last_value = porcentaje
+        return porcentaje
+
+    def as_text(self):
+        if self.last_value is None:
+            return "[POT] {} -> sin lectura".format(self.name)
+        return "[POT] {} -> {:.1f} %".format(self.name, self.last_value)
+
+
+# ============================
+# APLICACIÓN PRINCIPAL
+# ============================
+
+class SensorNetworkApp:
+    """
+    CLASE SensorNetworkApp
+    - Encapsula toda la "lógica de la aplicación".
+    - Aquí NO usamos variables globales: todo está dentro de este objeto.
+    """
+
+    def __init__(self):
+        # Lista de sensores (POLIMORFISMO: todos son "BaseSensor")
+        self._sensors = []
+        self._setup_sensors()
+
+    def _setup_sensors(self):
+        """
+        Aquí creamos los OBJETOS (INSTANCIAS) de cada sensor.
+        Cada 'sensor = HallSensor(...)' es un OBJETO.
+        """
+
+        hall_sensor = HallSensor(pin_num=23)         # D14 (ejemplo)
+        flame_sensor = FlameSensor(pin_num=22)       # D27 (ejemplo)
+        temp_sensor = TemperatureSensor(pin_num=32)  # ADC: GPIO32
+        ldr_sensor = LDRSensor(pin_num=35)           # ADC: GPIO33
+        pot_sensor = PotentiometerSensor(pin_num=34) # ADC: GPIO34
+
+        # Guardamos los objetos en una lista
+        self._sensors = [
+            hall_sensor,
+            flame_sensor,
+            temp_sensor,
+            ldr_sensor,
+            pot_sensor,
+        ]
+
+    def run(self, delay_seconds=1.0):
+        """
+        Bucle principal de la aplicación.
+        Muestra por terminal las lecturas de todos los sensores.
+        """
+
+        print("=== Red de sensores con ESP32 + MicroPython ===")
+        print("Presiona Ctrl+C para detener.\n")
+
+        try:
+            while True:
+                print("\n--- Lectura de sensores ---")
+                # POLIMORFISMO: no importa el tipo de sensor,
+                # siempre llamamos a read() y as_text()
+                for sensor in self._sensors:
+                    sensor.read()
+                    print(sensor.as_text())
+                time.sleep(delay_seconds)
+        except KeyboardInterrupt:
+            print("\nPrograma detenido por el usuario.")
+
+
+def main():
+    """
+    Función principal.
+    Aquí solo se crea el OBJETO de la aplicación y se ejecuta.
+    """
+    app = SensorNetworkApp()  # OBJETO de la clase SensorNetworkApp
+    app.run(delay_seconds=1.0)
+
+main()
