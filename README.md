@@ -1,4 +1,20 @@
-# practica4POO
-Para esta practica utilizamos un sensor de efecto hall, fotoresistor LDR, un sensor de temperatura, un potenciometro de 10K y un sensor de flamas
 
-En este código tenemos una clase base donde tenemos un sensor genérico y las propiedades de encapsulamiento, tenemos otra clase llamada DigitalSensor que viene de herencia de BaseSensor y encapsula la lógica
+Objetivo de la practica 
+se implementaron una red de sensores conectados a una ESP32, programada en MicroPython, se utilizaron 
+* clases y objetos
+* clases base y clases especificas 
+* encapsulamiento 
+* polimorfismo 
+* lectura de sensores 
+clases
+son la estructura principal. Cada bloque classNombre: define cada sensor 
+
+objetos
+se crean llamando a la clase. Esto quiere decir que un objeto es un sensor representado en el software
+
+Herencia:
+la jerarquia se muestra en una herencia
+
+BaseSensor
+* DigitalSensor
+* -HallSensor
