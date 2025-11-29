@@ -18,3 +18,34 @@ la jerarquia se muestra en una herencia
 BaseSensor
 * DigitalSensor
 * -HallSensor
+AnalogSensor
+* TemperaturaSensor
+* LDRSensor 
+* PotenciometroSensor 
+
+Encapsulamiento 
+Evita modificar los valores internos desde fuera
+
+Polimorfismo 
+Todos los sensores comparten los métodos de read() y as_text() y cada uno se comporta distinto 
+
+Codigo modular
+
+class SensorNetworkApp:
+    def _setup_sensors(self):
+    def run(self):
+
+Se puede:
+* Agregar más se sensores
+* Quitar sensores 
+* Cambiar pines 
+* Modificar la lógica
+
+todo esto se puede hacer, sin romper el resto del código 
+
+Muestreo en la terminal 
+La terminal muestra un monitoreo en tiempo real 
+
+No hay variables globales
+* Todas las variables se encuentran dentro de las clases 
+* Nada está declarado fuera de las funciones y clases, excepto el main()
